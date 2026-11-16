@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>カラオケ歌詞タイミング同期エディター</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&display=swap');
+  body { font-family: 'Noto Sans JP', sans-serif; background: #0a0a1a; color: #e0e0ff; }
+  .neon-pink { color: #ff4fc4; }
+  .neon-cyan { color: #00e5ff; }
+  .neon-border-pink { border-color: #ff4fc4; box-shadow: 0 0 8px #ff4fc480; }
+  .neon-border-cyan { border-color: #00e5ff; box-shadow: 0 0 8px #00e5ff80; }
+  .highlight-line {
+    background: linear-gradient(90deg, #ff4fc420, #cc00aa20);
+    color: #ff4fc4;
+    text-shadow: 0 0 12px #ff4fc4;
+    font-size: 1.5em;
+    font-weight: bold;
+    transition: all 0.3s ease;
+  }
+  .next-line { color: #aaaacc; font-size: 1.1em; }
+  .ts-input {
+    background: #1a1a2e;
+    border: 1px solid #333366;
+    color: #e0e0ff;
+    width: 100px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: monospace;
+  }
+  .ts-input:focus { outline: none; border-color: #ff4fc4; box-shadow: 0 0 6px #ff4fc460; }
+  .panel { background: #0d0d20; border: 1px solid #222244; border-radius: 8px; padding: 16px; }
+  textarea { background: #1a1a2e; border: 1px solid #333366; color: #e0e0ff; resize: vertical; }
+  textarea:focus { outline: none; border-color: #00e5ff; box-shadow: 0 0 6px #00e5ff60; }
+  button.primary { background: linear-gradient(135deg, #cc00aa, #8800cc); color: white; border: none; padding: 8px 18px; border-radius: 6px; cursor: pointer; font-weight: bold; }
+  button.primary:hover { background: linear-gradient(135deg, #ff4fc4, #aa00ff); }
+  button.secondary { background: #1a1a2e; color: #00e5ff; border: 1px solid #00e5ff; padding: 6px 14px; border-radius: 6px; cursor: pointer; }
+  button.secondary:hover { background: #0d1a2e; box-shadow: 0 0 8px #00e5ff60; }
+  button.danger { background: #2a0a0a; color: #ff4444; border: 1px solid #ff4444; padding: 6px 14px; border-radius: 6px; cursor: pointer; }
+  button.danger:hover { background: #3a0a0a; }
+  .timer-display { font-size: 2.5rem; font-family: monospace; color: #00e5ff; text-shadow: 0 0 20px #00e5ff; letter-spacing: 0.1em; }
+  .line-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; border-bottom: 1px solid #1a1a30; }
+  .line-num { color: #666688; font-size: 0.8em; min-width: 24px; text-align: right; }
+  .line-text { flex: 1; color: #c0c0e0; font-size: 0.9em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  select { background: #1a1a2e; border: 1px solid #333366; color: #e0e0ff; padding: 4px 8px; border-radius: 4px; }
+  select:focus { outline: none; border-color: #00e5ff; }
+  #previewArea { min-height: 160px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 20px; }
+  .preview-current { width: 100%; text-align: center; padding: 16px; border-radius: 8px; transition: all 0.3s; }
+  .preview-next { width: 100%; text-align: center; padding: 8px; border-radius: 4px; }
+</style>
+</head>
+<body>
+<div class="min-h-screen p-4">
+  <!-- Header -->
+  <header class="text-center mb-6">
+    <h1 class="text-2xl font-bold neon-pink mb-1">🎤 カラオケ歌詞タイミング同期エディター</h1>
+    <p class="text-sm text-gray-400">歌詞のタイミングを設定してLRC形式で書き出し</p>
+  </header>
+
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+    <!-- Left: Lyrics Input -->
+    <div class="panel">
+      <h2 class="text-sm font-bold neon-cyan mb-3 uppercase tracking-wider">歌詞入力</h2>
+      <label for="lyricsInput" class="text-xs text-gray-400 block mb-1">1行ずつ歌詞を入力してください</label>
+      <textarea id="lyricsInput" rows="12" class="w-full rounded p-2 text-sm" placeholder="桜の花びら舞い散る&#10;あの日の君の笑顔&#10;今も忘れられない..."></textarea>
+      <div class="flex gap-2 mt-3 flex-wrap">
+        <button class="primary text-xs" id="btnParseLyrics">歌詞を読み込む</button>
+        <button class="secondary text-xs" id="btnImportLrc">LRCインポート</button>
+        <button class="danger text-xs" id="btnClearAll">クリア</button>
+      </div>
+      <div class="mt-3">
+        <label for="fontSizeSelect" class="text-xs text-gray-400 mr-2">プレビュー文字サイズ:</label>
+        <select id="fontSizeSelect">
+          <option value="1">小</option>
+          <option value="1.5" selected>中</option>
+          <option value="2">大</option>
+          <option value="2.5">特大</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Middle: Timeline -->
+    <div class="panel overflow-y-auto max-h-[600px]">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-sm font-bold neon-cyan uppercase tracking-wider">タイムライン</h2>
+        <button class="secondary text-xs" id="btnAutoAlign">等間隔自動調整</button>
+      </div>
+      <div id="timelineList" class="space-y-1">
+        <p class="text-xs text-gray-500 text-center py-4">歌詞を読み込んでください</p>
+      </div>
+    </div>
+
+    <!-- Right: Preview + Export -->
+    <div class="space-y-4">
+      <!-- Preview -->
+      <div class="panel">
+        <h2 class="text-sm font-bold neon-cyan mb-3 uppercase tracking-wider">プレビュー</h2>
+        <div class="timer-display text-center mb-3" id="timerDisplay">00:00.00</div>
+        <div id="previewArea" class="bg-black rounded-lg">
+          <div id="previewCurrent" class="preview-current">
+            <span id="currentLineText" class="text-gray-500">▶ 再生をクリックして開始</span>
+          </div>
+          <div id="previewNext" class="preview-next">
+            <span id="nextLineText" class="text-gray-600 text-sm"></span>
+          </div>
+        </div>
+        <div class="flex gap-2 mt-3 justify-center flex-wrap">
+          <button class="primary text-sm" id="btnPlay">▶ 再生</button>
+          <button class="secondary text-sm" id="btnPause">⏸ 一時停止</button>
+          <button class="secondary text-sm" id="btnStop">⏹ 停止</button>
+        </div>
+        <div class="mt-2">
+          <input type="range" id="seekBar" min="0" max="100" value="0" class="w-full accent-pink-500" aria-label="シークバー">
+        </div>
+      </div>
+
+      <!-- Export -->
+      <div class="panel">
+        <h2 class="text-sm font-bold neon-cyan mb-3 uppercase tracking-wider">書き出し</h2>
+        <div class="mb-2">
+          <label class="text-xs text-gray-400 block mb-1">楽曲情報（オプション）</label>
+          <input type="text" id="metaTitle" placeholder="曲名" class="ts-input w-full mb-1 text-xs" style="width:100%">
+          <input type="text" id="metaArtist" placeholder="アーティスト" class="ts-input w-full text-xs mt-1" style="width:100%">
+        </div>
+        <div class="flex gap-2 mt-3">
+          <button class="primary text-sm" id="btnExportLrc">LRC ダウンロード</button>
+          <button class="secondary text-sm" id="btnPreviewLrc">LRC プレビュー</button>
+        </div>
+        <pre id="lrcPreview" class="text-xs text-green-400 mt-3 bg-black p-2 rounded hidden overflow-auto max-h-32"></pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- Hidden LRC import area -->
+  <div id="importModal" class="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center hidden z-50">
+    <div class="panel w-full max-w-lg mx-4">
+      <h3 class="text-sm font-bold neon-pink mb-3">LRCファイルをインポート</h3>
+      <textarea id="lrcImportText" rows="10" class="w-full rounded p-2 text-xs" placeholder="[00:12.34]歌詞テキスト&#10;[00:15.67]次の行..."></textarea>
+      <div class="flex gap-2 mt-3">
+        <button class="primary text-sm" id="btnDoImport">インポート</button>
+        <button class="secondary text-sm" id="btnCancelImport">キャンセル</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {
+  'use strict';
+
+  let lines = [];
+  let isPlaying = false;
+  let currentTime = 0;
+  let animFrameId = null;
+  let lastTimestamp = null;
+  let totalDuration = 0;
+
+  // --- DOM refs ---
+  const lyricsInput = document.getElementById('lyricsInput');
+  const timelineList = document.getElementById('timelineList');
+  const timerDisplay = document.getElementById('timerDisplay');
+  const previewArea = document.getElementById('previewArea');
+  const currentLineText = document.getElementById('currentLineText');
+  const nextLineText = document.getElementById('nextLineText');
+  const seekBar = document.getElementById('seekBar');
+  const lrcPreview = document.getElementById('lrcPreview');
+  const importModal = document.getElementById('importModal');
+  const lrcImportText = document.getElementById('lrcImportText');
+  const fontSizeSelect = document.getElementById('fontSizeSelect');
+
+  function formatTime(secs) {
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    const ss = Math.floor(s);
+    const frac = Math.round((s - ss) * 100);
+    return `${String(m).padStart(2,'0')}:${String(ss).padStart(2,'0')}.${String(frac).padStart(2,'0')}`;
+  }
+
+  function parseTimestamp(ts) {
+    const m = ts.match(/^(\d{1,2}):(\d{2})\.(\d{2})$/);
+    if (!m) return NaN;
+    return parseInt(m[1]) * 60 + parseInt(m[2]) + parseInt(m[3]) / 100;
+  }
+
+  function parseLyrics() {
+    const text = lyricsInput.value;
+    const rawLines = text.split('\n');
+    lines = rawLines
+      .map(l => l.trim())
+      .filter(l => l.length > 0)
+      .map((l, i) => ({
+        text: l,
+        time: lines[i] ? lines[i].time : NaN
+      }));
+    renderTimeline();
+  }
+
+  function renderTimeline() {
+    timelineList.innerHTML = '';
+    if (lines.length === 0) {
+      const p = document.createElement('p');
+      p.className = 'text-xs text-gray-500 text-center py-4';
+      p.textContent = '歌詞を読み込んでください';
+      timelineList.appendChild(p);
+      return;
+    }
+    lines.forEach((line, i) => {
+      const row = document.createElement('div');
+      row.className = 'line-row';
+
+      const num = document.createElement('span');
+      num.className = 'line-num';
+      num.textContent = i + 1;
+
+      const tsInput = document.createElement('input');
+      tsInput.type = 'text';
+      tsInput.className = 'ts-input';
+      tsInput.placeholder = '00:00.00';
+      tsInput.value = isNaN(line.time) ? '' : formatTime(line.time);
+      tsInput.setAttribute('aria-label', `行${i+1}のタイムスタンプ`);
+      tsInput.dataset.index = i;
+
+      tsInput.addEventListener('change', function() {
+        const idx = parseInt(this.dataset.index);
+        const val = parseTimestamp(this.value);
+        lines[idx].time = val;
+        if (isNaN(val)) {
+          this.style.borderColor = '#ff4444';
+        } else {
+          this.style.borderColor = '';
+        }
+      });
+
+      const textSpan = document.createElement('span');
+      textSpan.className = 'line-text';
+      textSpan.textContent = line.text;
+
+      row.appendChild(num);
+      row.appendChild(tsInput);
+      row.appendChild(textSpan);
+      timelineList.appendChild(row);
+    });
+  }
+
+  function autoAlign() {
+    if (lines.length < 2) return;
+    const duration = totalDuration > 0 ? totalDuration : lines.length * 3;
+    lines.forEach((line, i) => {
+      line.time = (i / lines.length) * duration;
+    });
+    renderTimeline();
+  }
+
+  function getCurrentLineIndex(t) {
+    let idx = -1;
+    for (let i = 0; i < lines.length; i++) {
+      if (!isNaN(lines[i].time) && lines[i].time <= t) {
+        idx = i;
+      }
+    }
+    return idx;
+  }
+
+  function updatePreview(t) {
+    const idx = getCurrentLineIndex(t);
+    const fontSize = parseFloat(fontSizeSelect.value);
+    currentLineText.style.fontSize = fontSize + 'em';
+
+    if (idx < 0) {
+      currentLineText.textContent = lines.length > 0 ? '...' : '▶ 再生をクリックして開始';
+      nextLineText.textContent = '';
+      document.getElementById('previewCurrent').className = 'preview-current';
+    } else {
+      currentLineText.textContent = lines[idx].text;
+      document.getElementById('previewCurrent').className = 'preview-current highlight-line';
+      if (idx + 1 < lines.length) {
+        nextLineText.textContent = lines[idx + 1].text;
+      } else {
+        nextLineText.textContent = '';
+      }
+    }
+
+    const maxTime = getMaxTime();
+    timerDisplay.textContent = formatTime(t);
+    if (maxTime > 0) {
+      seekBar.value = (t / maxTime) * 100;
+    }
+  }
+
+  function getMaxTime() {
+    const times = lines.map(l => l.time).filter(t => !isNaN(t));
+    if (times.length === 0) return 60;
+    return Math.max(...times) + 5;
+  }
+
+  function playLoop(ts) {
+    if (!isPlaying) return;
+    if (lastTimestamp !== null) {
+      currentTime += (ts - lastTimestamp) / 1000;
+    }
+    lastTimestamp = ts;
+    const maxTime = getMaxTime();
+    if (currentTime >= maxTime) {
+      currentTime = maxTime;
+      isPlaying = false;
+      lastTimestamp = null;
+    }
+    updatePreview(currentTime);
+    if (isPlaying) {
+      animFrameId = requestAnimationFrame(playLoop);
+    }
+  }
+
+  function startPlay() {
+    if (lines.length === 0) return;
+    isPlaying = true;
+    lastTimestamp = null;
+    animFrameId = requestAnimationFrame(playLoop);
+  }
+
+  function pausePlay() {
+    isPlaying = false;
+    lastTimestamp = null;
+    if (animFrameId) cancelAnimationFrame(animFrameId);
+  }
+
+  function stopPlay() {
+    pausePlay();
+    currentTime = 0;
+    updatePreview(0);
+    document.getElementById('previewCurrent').className = 'preview-current';
+    currentLineText.textContent = lines.length > 0 ? '...' : '▶ 再生をクリックして開始';
+  }
+
+  function buildLrc() {
+    const title = document.getElementById('metaTitle').value.trim();
+    const artist = document.getElementById('metaArtist').value.trim();
+    let lrc = '';
+    if (title) lrc += `[ti:${title}]\n`;
+    if (artist) lrc += `[ar:${artist}]\n`;
+    lrc += '[by:カラオケ歌詞エディター]\n\n';
+    lines.forEach(line => {
+      if (!isNaN(line.time)) {
+        lrc += `[${formatTime(line.time)}]${line.text}\n`;
+      } else {
+        lrc += `[00:00.00]${line.text}\n`;
+      }
+    });
+    return lrc;
+  }
+
+  function exportLrc() {
+    const lrc = buildLrc();
+    const blob = new Blob([lrc], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const title = document.getElementById('metaTitle').value.trim() || 'lyrics';
+    a.download = title + '.lrc';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  function importLrc(text) {
+    const lrcLines = text.split('\n');
+    const metaRe = /^\[(\w+):(.+)\]$/;
+    const lineRe = /^\[(\d{1,2}:\d{2}\.\d{2})\](.*)$/;
+    const newLines = [];
+    lrcLines.forEach(l => {
+      l = l.trim();
+      const metaMatch = l.match(metaRe);
+      if (metaMatch) {
+        if (metaMatch[1] === 'ti') document.getElementById('metaTitle').value = metaMatch[2];
+        if (metaMatch[1] === 'ar') document.getElementById('metaArtist').value = metaMatch[2];
+        return;
+      }
+      const lineMatch = l.match(lineRe);
+      if (lineMatch) {
+        newLines.push({ time: parseTimestamp(lineMatch[1]), text: lineMatch[2] });
+      }
+    });
+    if (newLines.length > 0) {
+      lines = newLines;
+      lyricsInput.value = lines.map(l => l.text).join('\n');
+      renderTimeline();
+    }
+  }
+
+  // Event Listeners
+  document.getElementById('btnParseLyrics').addEventListener('click', parseLyrics);
+
+  document.getElementById('btnClearAll').addEventListener('click', function() {
+    lines = [];
+    lyricsInput.value = '';
+    stopPlay();
+    renderTimeline();
+    lrcPreview.classList.add('hidden');
+  });
+
+  document.getElementById('btnAutoAlign').addEventListener('click', autoAlign);
+  document.getElementById('btnPlay').addEventListener('click', startPlay);
+  document.getElementById('btnPause').addEventListener('click', pausePlay);
+  document.getElementById('btnStop').addEventListener('click', stopPlay);
+
+  document.getElementById('btnExportLrc').addEventListener('click', exportLrc);
+
+  document.getElementById('btnPreviewLrc').addEventListener('click', function() {
+    const lrc = buildLrc();
+    lrcPreview.textContent = lrc;
+    lrcPreview.classList.toggle('hidden');
+  });
+
+  document.getElementById('btnImportLrc').addEventListener('click', function() {
+    importModal.classList.remove('hidden');
+  });
+
+  document.getElementById('btnDoImport').addEventListener('click', function() {
+    importLrc(lrcImportText.value);
+    importModal.classList.add('hidden');
+    lrcImportText.value = '';
+  });
+
+  document.getElementById('btnCancelImport').addEventListener('click', function() {
+    importModal.classList.add('hidden');
+    lrcImportText.value = '';
+  });
+
+  seekBar.addEventListener('input', function() {
+    const maxTime = getMaxTime();
+    currentTime = (parseFloat(this.value) / 100) * maxTime;
+    updatePreview(currentTime);
+  });
+
+  fontSizeSelect.addEventListener('change', function() {
+    updatePreview(currentTime);
+  });
+
+  importModal.addEventListener('click', function(e) {
+    if (e.target === importModal) importModal.classList.add('hidden');
+  });
+
+  // Keyboard shortcuts
+  document.addEventListener('keydown', function(e) {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+    if (e.code === 'Space') { e.preventDefault(); isPlaying ? pausePlay() : startPlay(); }
+    if (e.code === 'KeyS') stopPlay();
+  });
+
+  // Init
+  renderTimeline();
+})();
+</script>
+</body>
+</html>
